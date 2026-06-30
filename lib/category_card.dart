@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:mental_math_app/game_elements/game_screen.dart';
 import 'package:mental_math_app/game_elements/math_questions.dart';
+import 'package:mental_math_app/level_map_screen.dart';
 
 class CategoryCard extends StatelessWidget {
   final String title;
@@ -23,9 +23,55 @@ class CategoryCard extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => GameScreen(
-              title: title,
-              questionGenerator: generateElevensQuestion,
+            builder: (context) => LevelMapScreen(
+              courseTitle: "Mental Multiplication",
+              levels: [
+                {
+                  'title': 'The Elevens Trick',
+                  'generator': generateElevensQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Multiplying by Fives',
+                  'generator': generateFivesQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Squares Mastery',
+                  'generator': generateElevensQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'The Elevens Trick',
+                  'generator': generateElevensQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Multiplying by Fives',
+                  'generator': generateFivesQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Squares Mastery',
+                  'generator': generateElevensQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'The Elevens Trick',
+                  'generator': generateElevensQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Multiplying by Fives',
+                  'generator': generateFivesQuestion,
+                  'unlocked': true,
+                },
+                {
+                  'title': 'Squares Mastery',
+                  'generator': generateElevensQuestion,
+                  'unlocked': false,
+                }
+              ],
             ),
           ),
         );

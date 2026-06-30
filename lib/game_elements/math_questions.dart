@@ -8,3 +8,13 @@ Map<String, String> generateElevensQuestion() {
     'answer': (num * 11).toString(),
   };
 }
+
+
+Map<String, String> generateFivesQuestion() {
+  final random = Random();
+  int num = (random.nextInt(45) + 6) * 2;
+  return {
+    'question': '$num x 5',
+    'answer': (num * 5).toString(),
+  };
+}
