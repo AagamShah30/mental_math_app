@@ -1,6 +1,10 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:mental_math_app/game_elements/game_screen.dart';
+// 🌟 Added the missing import for your tutorial widget
+import 'package:mental_math_app/game_elements/elevens_tutorial_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'theme_gradients.dart'; // 🌟 Import your new gradient file!
 
 class LevelMapScreen extends StatefulWidget {
   final String courseTitle;
@@ -17,7 +21,7 @@ class LevelMapScreen extends StatefulWidget {
 }
 
 class _LevelMapScreenState extends State<LevelMapScreen> {
-  // We will store the exact computed centers of each orb to feed our line painter
+  late List<Map<String, dynamic>> levelProgress;
   List<Offset> nodePositions = [];
   final double rowHeight = 130.0;
   final double orbSize = 80.0;
@@ -28,22 +32,83 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
     _calculatePositions();
   }
 
+  Future<void> _saveProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> unlockedIndexes = [];
+
+    for (int i = 0; i < levelProgress.length; i++) {
+      if (levelProgress[i]['unlocked'] == true) {
+        unlockedIndexes.add(i.toString());
+      }
+    }
+
+    await prefs.setStringList(
+      'unlocked_levels_multiplication',
+      unlockedIndexes,
+    );
+  }
+
+  Future<void> _loadProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String>? savedIndexes = prefs.getStringList(
+      'unlocked_levels_multiplication',
+    );
+
+    if (savedIndexes != null) {
+      setState(() {
+        for (String indexStr in savedIndexes) {
+          int index = int.parse(indexStr);
+          if (index < levelProgress.length) {
+            levelProgress[index]['unlocked'] = true;
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _resetAllProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('unlocked_levels_multiplication');
+
+    setState(() {
+      for (int i = 0; i < levelProgress.length; i++) {
+        levelProgress[i]['unlocked'] = (i == 0);
+      }
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dev Mode: Progress Reset!'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    levelProgress = List<Map<String, dynamic>>.from(widget.levels);
+    _loadProgress();
+  }
+
   void _calculatePositions() {
-    final random = Random(42); // Seeded random layout
+    final random = Random(42);
     final screenWidth = MediaQuery.of(context).size.width;
     final centerX = screenWidth / 2;
-    
+
     List<Offset> positions = [];
-    
-    for (int i = 0; i < widget.levels.length; i++) {
-      // Create organic shifts left and right from center, exactly like the chess app map
-      double xOffset = (random.nextDouble() * 140) - 70; 
+
+    for (int i = 0; i < levelProgress.length; i++) {
+      double xOffset = (random.nextDouble() * 140) - 70;
       double x = centerX + xOffset;
       double y = 60.0 + (i * rowHeight) + (orbSize / 2);
-      
+
       positions.add(Offset(x, y));
     }
-    
+
     setState(() {
       nodePositions = positions;
     });
@@ -52,15 +117,25 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final totalHeight = 120.0 + (widget.levels.length * rowHeight);
+    final totalHeight = 120.0 + (levelProgress.length * rowHeight);
 
     return Scaffold(
-      backgroundColor: isDarkMode ? const Color(0xFF070B19) : const Color(0xfff8f9fa), // Deep cosmic dark theme vs light background
+      backgroundColor: isDarkMode
+          ? const Color(0xFF070B19)
+          : const Color(0xfff8f9fa),
       appBar: AppBar(
         title: Text(widget.courseTitle),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
+
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.redAccent),
+            tooltip: 'Reset Dev Progress',
+            onPressed: _resetAllProgress,
+          )
+        ],
       ),
       body: nodePositions.isEmpty
           ? const Center(child: CircularProgressIndicator())
@@ -69,38 +144,69 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
                 height: totalHeight,
                 child: Stack(
                   children: [
-                    // Layer 1: Perfect connecting vector line tracks
                     Positioned.fill(
                       child: CustomPaint(
                         painter: AbsolutePathPainter(
                           positions: nodePositions,
-                          levels: widget.levels,
-                          isDarkMode: isDarkMode, // Pass theme status down
+                          levels: levelProgress,
+                          isDarkMode: isDarkMode,
                         ),
                       ),
                     ),
-                    
-                    // Layer 2: Vector neon interactive orbs
-                    ...List.generate(widget.levels.length, (index) {
-                      final level = widget.levels[index];
+
+                    ...List.generate(levelProgress.length, (index) {
+                      final level = levelProgress[index];
                       final isUnlocked = level['unlocked'] as bool;
                       final pos = nodePositions[index];
+
+                      final currentColors = getLevelGradient(level['gameMode']);
 
                       return Positioned(
                         left: pos.dx - (orbSize / 2),
                         top: pos.dy - (orbSize / 2),
                         child: GestureDetector(
-                          onTap: () {
+                          onTap: () async {
                             if (isUnlocked) {
-                              Navigator.push(
+                              // 🌟 Fix: Decide which widget to assign BEFORE entering Navigator parameters
+                              Widget destinationScreen;
+
+                              if (level['gameMode'] == 'tutorial') {
+                                destinationScreen =
+                                    ElevensTutorialWidget(
+                                      onComplete: () {
+                                        if (index + 1 < levelProgress.length) {
+                                          levelProgress[index + 1]['unlocked'] = true;
+                                          _saveProgress();
+                                        }
+                                      }
+                                    );
+                              } else {
+                                destinationScreen = GameScreen(
+                                  title: level['title'],
+                                  questionGenerator: level['generator'],
+                                  levelId: 001001 + index,
+                                  questionCount: level['questionCount'],
+                                  gameMode: level['gameMode'],
+                                  onLevelComplete: (score) {
+                                    if (index + 1 < levelProgress.length) {
+                                      if (score >= level['questionCount']) {
+                                        levelProgress[index + 1]['unlocked'] =
+                                            true;
+                                        _saveProgress();
+                                      }
+                                    }
+                                  },
+                                );
+                              }
+
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => GameScreen(
-                                    title: level['title'],
-                                    questionGenerator: level['generator'],
-                                  ),
+                                  builder: (context) => destinationScreen,
                                 ),
                               );
+
+                              setState(() {});
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -109,15 +215,19 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
                                       'Level Locked!',
                                       style: TextStyle(
                                         fontSize: 24,
-                                        fontWeight: FontWeight(500),
-                                        color: isDarkMode ? const Color(0xfff8f9fa) : const Color(0xFF070B19),
+                                        fontWeight: FontWeight.w500,
+                                        color: isDarkMode
+                                            ? const Color(0xfff8f9fa)
+                                            : const Color(0xFF070B19),
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
                                   ),
-                                  backgroundColor: isDarkMode ? const Color(0xFF070B19) : const Color(0xfff8f9fa),
-                                  duration: Duration(seconds: 3),
-                                  ),
+                                  backgroundColor: isDarkMode
+                                      ? Colors.black54
+                                      : Colors.white70,
+                                  duration: const Duration(seconds: 3),
+                                ),
                               );
                             }
                           },
@@ -126,23 +236,24 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
                             height: orbSize,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              // Multi-colored Neon Ring inspired by your second uploaded file
                               border: Border.all(
-                                color: isUnlocked 
-                                    ? _getThemeColors(index)[0] 
+                                color: isUnlocked
+                                    ? currentColors[0]
                                     : Colors.grey[800]!,
                                 width: 4.0,
                               ),
-                              boxShadow: isUnlocked ? [
-                                BoxShadow(
-                                  color: _getThemeColors(index)[0].withAlpha(140),
-                                  blurRadius: 16,
-                                  spreadRadius: 1,
-                                )
-                              ] : null,
+                              boxShadow: isUnlocked
+                                  ? [
+                                      BoxShadow(
+                                        color: currentColors[0].withAlpha(140),
+                                        blurRadius: 16,
+                                        spreadRadius: 1,
+                                      ),
+                                    ]
+                                  : null,
                               gradient: SweepGradient(
-                                colors: isUnlocked 
-                                    ? _getThemeColors(index)
+                                colors: isUnlocked
+                                    ? currentColors
                                     : [Colors.grey[900]!, Colors.grey[850]!],
                               ),
                             ),
@@ -152,7 +263,9 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
                                 style: TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
-                                  color: isUnlocked ? Colors.white : Colors.grey[600],
+                                  color: isUnlocked
+                                      ? Colors.white
+                                      : Colors.grey[600],
                                 ),
                               ),
                             ),
@@ -166,25 +279,15 @@ class _LevelMapScreenState extends State<LevelMapScreen> {
             ),
     );
   }
-
-  List<Color> _getThemeColors(int index) {
-    final themes = [
-      [const Color.fromARGB(148, 226, 0, 117), const Color.fromARGB(179, 144, 0, 255), const Color.fromARGB(176, 226, 0, 117)], // Pink -> Violet
-      [const Color.fromARGB(185, 0, 245, 212), const Color.fromARGB(187, 0, 187, 249), const Color.fromARGB(186, 0, 245, 212)], // Teal -> Blue
-      [const Color.fromARGB(192, 255, 160, 28), const Color.fromARGB(181, 255, 0, 128), const Color.fromARGB(162, 255, 160, 28)], // Orange -> Hot Pink
-    ];
-    return themes[index % themes.length];
-  }
 }
 
-// True coordinates path lines painter
 class AbsolutePathPainter extends CustomPainter {
   final List<Offset> positions;
   final List<Map<String, dynamic>> levels;
   final bool isDarkMode;
 
   AbsolutePathPainter({
-    required this.positions, 
+    required this.positions,
     required this.levels,
     required this.isDarkMode,
   });
@@ -193,11 +296,10 @@ class AbsolutePathPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (positions.length < 2) return;
 
-    // Changes line track trace from white to black depending on system light/dark mode
     final baseColor = isDarkMode ? Colors.white : Colors.black;
 
     final solidPaint = Paint()
-      ..color = baseColor.withAlpha(50) 
+      ..color = baseColor.withAlpha(50)
       ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke;
 
@@ -215,13 +317,12 @@ class AbsolutePathPainter extends CustomPainter {
       if (nextLevelUnlocked) {
         canvas.drawLine(p1, p2, solidPaint);
       } else {
-        // High performance simple math dash rendering
         double dx = p2.dx - p1.dx;
         double dy = p2.dy - p1.dy;
         double distance = sqrt(dx * dx + dy * dy);
         double dashLength = 6.0;
         double spaceLength = 6.0;
-        
+
         double currentDist = 0;
         while (currentDist < distance) {
           double x1 = p1.dx + (dx * currentDist / distance);
@@ -230,7 +331,7 @@ class AbsolutePathPainter extends CustomPainter {
           if (currentDist > distance) currentDist = distance;
           double x2 = p1.dx + (dx * currentDist / distance);
           double y2 = p1.dy + (dy * currentDist / distance);
-          
+
           canvas.drawLine(Offset(x1, y1), Offset(x2, y2), dashedPaint);
           currentDist += spaceLength;
         }
@@ -239,6 +340,7 @@ class AbsolutePathPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant AbsolutePathPainter oldDelegate) => 
-      oldDelegate.positions != positions || oldDelegate.isDarkMode != isDarkMode;
+  bool shouldRepaint(covariant AbsolutePathPainter oldDelegate) =>
+      oldDelegate.positions != positions ||
+      oldDelegate.isDarkMode != isDarkMode;
 }
